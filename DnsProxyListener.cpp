@@ -717,7 +717,7 @@ DnsProxyListener::DnsProxyListener() : FrameworkListener(SOCKET_NAME) {
     mGetDnsNetIdCommand = std::make_unique<GetDnsNetIdCommand>();
     registerCmd(mGetDnsNetIdCommand.get());
 
-    if (ADnsHelper_init()) abort();
+    if (ADnsHelper_init()) return;
 }
 
 void DnsProxyListener::Handler::spawn() {
