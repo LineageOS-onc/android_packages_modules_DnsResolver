@@ -1,0 +1,87 @@
+name: Android
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  BRANCH: ${{ github.event.repository.default_branch }}
+  SOURCE: https://android.googlesource.com
+  PROJECT: platform/packages/modules/DnsResolver
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.1
+        with:
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+
+      - name: Git
+        env:
+          GIT_CONFIG: ${{ secrets.GIT_CONFIG }}
+          GIT_CREDENTIALS: ${{ secrets.GIT_CREDENTIALS }}
+        run: |
+          if [ -f "$HOME/.gitconfig" ]; then
+            rm -f "$HOME/.gitconfig"
+            echo "$GIT_CONFIG" | base64 -d > "$HOME/.gitconfig"
+          else
+            echo "$GIT_CONFIG" | base64 -d > "$HOME/.gitconfig"
+          fi
+
+          if [ -f "$HOME/.git-credentials" ]; then
+            rm -f "$HOME/.git-credentials"
+            echo "$GIT_CREDENTIALS" | base64 -d > "$HOME/.git-credentials"
+          else
+            echo "$GIT_CREDENTIALS" | base64 -d > "$HOME/.git-credentials"
+          fi
+
+      - name: Tag
+        run: |
+          curl -sL https://raw.githubusercontent.com/LineageOS/android/refs/heads/${{ env.BRANCH }}/default.xml -o default.xml
+          python3 <<'EOF'
+          import xml.etree.ElementTree as ET
+
+          tree = ET.parse('default.xml')
+          root = tree.getroot()
+
+          project_name = "${{ env.PROJECT }}"
+
+          default_remote = None
+          default_revision = None
+          for d in root.findall('default'):
+              default_remote = d.get('remote')
+              default_revision = d.get('revision')
+
+          remotes = {}
+          for r in root.findall('remote'):
+              remotes[r.get('name')] = r.get('revision')
+
+          tag = None
+          for p in root.findall('project'):
+              if p.get('name') == project_name:
+                  remote_name = p.get('remote') or default_remote
+                  tag = p.get('revision') or remotes.get(remote_name) or default_revision
+                  break
+
+          if not tag:
+              raise SystemExit(1)
+
+          with open('tag.txt', 'w') as f:
+              f.write(tag)
+          EOF
+          echo "PROJECT_TAG=$(cat tag.txt)" >> $GITHUB_ENV
+
+      - name: Fetch
+        run: git fetch ${{ env.SOURCE }}/${{ env.PROJECT }} ${{ env.PROJECT_TAG }}
+
+      - name: Merge
+        run: git merge FETCH_HEAD --no-edit
+
+      - name: Push
+        run: git push
